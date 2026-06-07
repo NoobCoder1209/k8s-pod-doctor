@@ -8,6 +8,7 @@ import (
 	"github.com/spf13/cobra"
 
 	"github.com/NoobCoder1209/k8s-pod-doctor/internal/doctor"
+	"github.com/NoobCoder1209/k8s-pod-doctor/internal/render"
 	"github.com/NoobCoder1209/k8s-pod-doctor/internal/version"
 )
 
@@ -49,7 +50,7 @@ Examples:
 			if _, ok := os.LookupEnv("NO_COLOR"); ok {
 				opts.NoColor = true
 			}
-			return doctor.Run(cmd.Context(), opts, cmd.OutOrStdout())
+			return doctor.Run(cmd.Context(), opts, render.Adapter{}, cmd.OutOrStdout())
 		},
 	}
 
