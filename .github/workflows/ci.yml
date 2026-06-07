@@ -35,7 +35,13 @@ jobs:
           version: v1.60.3
 
       - name: test
-        run: go test -race -count=1 ./...
+        run: go test -race -count=1 -coverprofile=coverage.out ./...
+
+      - name: upload coverage to codecov
+        uses: codecov/codecov-action@v4
+        with:
+          files: coverage.out
+          fail_ci_if_error: false
 
       - name: build
         run: go build ./cmd/pod-doctor
