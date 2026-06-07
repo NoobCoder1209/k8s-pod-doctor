@@ -132,3 +132,51 @@ func TestRunAllFailing_JSON_SkipsBadPodAndStaysValidJSON(t *testing.T) {
 func contains(haystack, needle string) bool {
 	return bytes.Contains([]byte(haystack), []byte(needle))
 }
+
+// failingRenderer returns an error from RenderJSON on the Nth pod (0-indexed).
+type failingRenderer struct {
+	failOn int
+	calls  int
+}
+
+func (f *failingRenderer) RenderText(_ io.Writer, _ *Snapshot, _ *Finding, _ []Finding, _, _ bool) {
+}
+
+func (f *failingRenderer) RenderJSON(w io.Writer, snap *Snapshot, _ *Finding, _ []Finding, _ bool, _ string, _ time.Time) error {
+	defer func() { f.calls++ }()
+	if f.calls == f.failOn {
+		return errors.New("simulated encode failure")
+	}
+	_, err := w.Write([]byte(`{"pod":"` + snap.Pod.Name + `"}`))
+	return err
+}
+
+func TestRunAllFailing_JSON_RendererErrorOnFirstPodStillProducesValidJSON(t *testing.T) {
+	failing1 := &corev1.Pod{
+		ObjectMeta: metav1.ObjectMeta{Namespace: "ns", Name: "first"},
+		Spec:       corev1.PodSpec{Containers: []corev1.Container{{Name: "web"}}},
+		Status: corev1.PodStatus{
+			Phase: corev1.PodFailed,
+		},
+	}
+	failing2 := &corev1.Pod{
+		ObjectMeta: metav1.ObjectMeta{Namespace: "ns", Name: "second"},
+		Spec:       corev1.PodSpec{Containers: []corev1.Container{{Name: "web"}}},
+		Status: corev1.PodStatus{
+			Phase: corev1.PodFailed,
+		},
+	}
+	cs := fake.NewSimpleClientset(failing1, failing2)
+	r := &failingRenderer{failOn: 0} // fail immediately on the first pod
+
+	var buf bytes.Buffer
+	err := runAllFailing(context.Background(), cs, Options{Output: "json"}, r, &buf, 100)
+	if err == nil {
+		t.Fatal("expected error from renderer")
+	}
+	// Output must still parse as valid JSON — the closing `]` is deferred.
+	var arr []any
+	if e := json.Unmarshal(buf.Bytes(), &arr); e != nil {
+		t.Fatalf("output is invalid JSON when renderer fails on first pod: %v\noutput: %s", e, buf.String())
+	}
+}

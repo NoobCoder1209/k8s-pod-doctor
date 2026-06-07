@@ -139,3 +139,46 @@ func TestImagePullBackOff_AllReasonVariants(t *testing.T) {
 		})
 	}
 }
+
+func TestPendingVolume_MultiPVC_NamesTheVolumeFromTheEvent(t *testing.T) {
+	// Pod has two PVC volumes; the FailedMount event names the SECOND one.
+	pod := mkPod("default", "web",
+		withPhase(corev1.PodPending),
+		withCondition(corev1.PodInitialized, corev1.ConditionFalse, "ContainersNotInitialized", ""),
+	)
+	pod.Spec.Volumes = []corev1.Volume{
+		{Name: "data-a", VolumeSource: corev1.VolumeSource{
+			PersistentVolumeClaim: &corev1.PersistentVolumeClaimVolumeSource{ClaimName: "claim-a"},
+		}},
+		{Name: "data-b", VolumeSource: corev1.VolumeSource{
+			PersistentVolumeClaim: &corev1.PersistentVolumeClaimVolumeSource{ClaimName: "claim-b"},
+		}},
+	}
+	ev := mkEvent("FailedMount", `MountVolume.SetUp failed for volume "data-b" : timed out waiting`)
+	snap := mkSnap(pod, ev)
+
+	got := pendingVolumeRule(snap)
+	if len(got) != 1 {
+		t.Fatalf("want 1 finding, got %d", len(got))
+	}
+	// The message should name "data-b" / "claim-b", not the first PVC.
+	if !strings.Contains(got[0].Message, `"data-b"`) {
+		t.Fatalf("want message to name data-b, got %q", got[0].Message)
+	}
+	if !strings.Contains(got[0].Message, `"claim-b"`) {
+		t.Fatalf("want message to name claim-b, got %q", got[0].Message)
+	}
+	// Suggestion should target the failing PVC, not the first one.
+	hasCorrectSuggestion := false
+	for _, s := range got[0].Suggestions {
+		if strings.Contains(s, "describe pvc claim-b") {
+			hasCorrectSuggestion = true
+		}
+		if strings.Contains(s, "describe pvc claim-a") {
+			t.Fatalf("suggestion incorrectly references claim-a: %s", s)
+		}
+	}
+	if !hasCorrectSuggestion {
+		t.Fatalf("missing `describe pvc claim-b` suggestion: %v", got[0].Suggestions)
+	}
+}

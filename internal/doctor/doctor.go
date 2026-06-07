@@ -121,33 +121,36 @@ func runAllFailing(ctx context.Context, client kubernetes.Interface, opts Option
 
 // renderAllJSON emits a JSON array of one Report per pod. Pods whose snapshot
 // fails are emitted as {"pod": {...}, "error": "..."} placeholders so the
-// output stays valid JSON and downstream tools can see the failures. The
-// closing `]` is always emitted, even if the renderer errors mid-stream.
+// output stays valid JSON. The closing `]` is always emitted, even if the
+// renderer errors mid-stream (deferred). Any pods AFTER a renderer error are
+// not rendered, but the document remains valid JSON regardless.
 func renderAllJSON(ctx context.Context, client kubernetes.Interface, r Renderer, out io.Writer, failing []corev1.Pod, tail int64) (retErr error) {
 	fmt.Fprint(out, "[")
 	defer fmt.Fprintln(out, "]")
 
 	first := true
-	for _, p := range failing {
+	emitPlaceholder := func(p corev1.Pod, msg string) {
 		if !first {
 			fmt.Fprint(out, ",")
 		}
 		first = false
+		fmt.Fprintf(out, `{"pod":{"namespace":%q,"name":%q},"error":%q}`,
+			p.Namespace, p.Name, msg)
+	}
 
+	for _, p := range failing {
 		snap, err := CollectSnapshot(ctx, client, p.Namespace, p.Name, tail)
 		if err != nil {
-			fmt.Fprintf(out, `{"pod":{"namespace":%q,"name":%q},"error":%q}`,
-				p.Namespace, p.Name, err.Error())
+			emitPlaceholder(p, err.Error())
 			continue
 		}
+		if !first {
+			fmt.Fprint(out, ",")
+		}
+		first = false
 		verdict, findings, healthy := Diagnose(snap)
 		if err := r.RenderJSON(out, snap, verdict, ensureSlice(findings), healthy, version.Version, time.Now()); err != nil {
 			retErr = err
-			// Emit a placeholder so the array element count matches the
-			// failing-pod count, then bail out cleanly. The deferred `]`
-			// ensures the document is still valid JSON.
-			fmt.Fprintf(out, `,{"pod":{"namespace":%q,"name":%q},"error":%q}`,
-				p.Namespace, p.Name, "render failed: "+err.Error())
 			return retErr
 		}
 	}
