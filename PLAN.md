@@ -1,64 +1,95 @@
 # `k8s-pod-doctor` — Execution Plan
 
-> Tier 2 shelf — built opportunistically, not pinned. Inherits shared standards
-> from the master plan.
+## How to use this plan
+
+You are the build session for this repo. Read this file end-to-end, then start executing immediately.
+
+**Working agreement:**
+
+1. **Start without waiting.** Begin Phase 1 in the *Subagent playbook* below.
+2. **Always ask the user about business decisions and business logic.** Output formatting style, README copy, the deliberately-broken-pod scenario for the GIF, install instructions tone. The "Business decisions" section below lists them.
+3. **Ask the user when you are genuinely blocked.**
+4. **Do not ask the user about engineering details.** Internal types, package layout, CLI flag mechanics — your call.
+5. **Use subagents aggressively.** Default to the playbook below.
+6. **TaskCreate / TaskUpdate everything.**
+7. **Pattern 3 only.** No hosted demo. README has a GIF/screenshot of a live `kind` cluster diagnosis.
+8. **Follow shared standards** (MIT, README, CI, topics, private until verified).
+9. **All `Agent` tool calls must pass `model: "opus"`.**
+10. **Off-limits forever:** SAP-internal cluster names / labels / namespaces, `~/.claude/`, RCA content. Tool is generic.
+
+## Subagent playbook (this repo)
+
+Go + client-go + cobra. 3 in research, 2 in review.
+
+**Phase 1 — Research (parallel):**
+- `Explore` (Opus): "Find the canonical `client-go` (v0.30+) clientset construction pattern from kubeconfig (env + ~/.kube/config + override flag), plus listing pods, listing events with `fieldSelector`, and tailing logs. Return ≤120-line Go skeleton."
+- `Explore` (Opus): "Find common Kubernetes pod failure-mode signatures (CrashLoopBackOff, OOMKilled, ImagePullBackOff, FailedScheduling, PVC unbound, probe-failure events). Return a table of (signature → fields/event reasons → how to detect)."
+- `Explore` (Opus): "Find the canonical Cobra CLI structure for a small kubectl-style binary with subcommands and `--kubeconfig` / `--context` overrides. Return root.go skeleton."
+
+**Phase 2 — Design (single):**
+- `Plan` (Opus): "Given research and this PLAN.md, propose the package layout, the `Snapshot` and `Finding` types, and the rule list with positive/negative test cases each. Return as a checklist."
+
+**Phase 3 — Build:** main session writes Go code. `Explore` for specific client-go API questions on demand.
+
+**Phase 4 — Review (parallel):**
+- `code-reviewer` (Opus): "Review for: read-only enforcement (no exec/delete/patch anywhere), kubeconfig precedence correctness, table-driven test coverage of every rule, JSON output schema consistency. High effort."
+- `tester` (Opus): "Verify all unit tests pass under `go test ./...`. Add fixtures for any rule missing positive+negative cases. Confirm a `kind`-cluster smoke run produces sensible output."
+
+**Phase 5 — Polish:** record GIF on a kind cluster with a deliberately-broken pod, ask user before flipping public.
+
+---
 
 ## Goal
 
 A small CLI that takes a sick Kubernetes pod and produces a **human-readable
 diagnostic report**: pod status, recent events, container log tails, and a
-pattern-matcher that names the most common failure modes
-(CrashLoopBackOff, OOMKilled, ImagePullBackOff, readiness/liveness probe
-failures, PVC stuck pending, container exited non-zero).
-
-This is the kind of tool an SRE writes once, copies forever. Public version =
-proof Aleksandar's SRE claim is real.
+pattern-matcher that names the most common failure modes.
 
 **Sells:** Kubernetes, SRE, CLI development, Go, troubleshooting.
 
+## Business decisions to ask the user about
+
+- **Output style for the verdict line** — boxed banner (recommended) vs single line. Big readability impact.
+- **Colour usage** — recommend severity-only colour (red critical, yellow warning), respect `NO_COLOR=1`.
+- **Demo scenario for the GIF** — recommend `image: nginx:notreal` for ImagePullBackOff (fastest, most visual). Alternatives: OOMKilled (memory hog), CrashLoopBackOff (failing exec).
+- **Install path in README** — recommend both `curl | tar` and `go install` snippets. Confirm with user.
+- **Whether to set up a Homebrew tap** — defer to v2 unless user wants it now.
+
 ## Scope (must-haves)
 
-1. CLI invocation: `pod-doctor <namespace> <pod-name>` (and a `--all-failing`
-   flag that scans the namespace).
-2. Output is **plain text** by default, **`-o json`** flag for machine consumption.
-3. Sections in the report (in order):
-   - **Summary** — one-sentence verdict (healthy / sick + matched pattern)
-   - **Status** — phase, conditions, containers (image, restarts, last termination reason)
-   - **Recent events** — last 10 events for that pod, oldest first
-   - **Logs** — last 20 lines per container (or `--tail N` override)
-   - **Diagnosis** — list of matched patterns with suggested next steps
-4. Pattern matchers (rules.go):
-   - `CrashLoopBackOff` — `restartCount > 0` AND last termination reason in `{Error, OOMKilled}`
-   - `OOMKilled` — last termination reason exactly `OOMKilled`
-   - `ImagePullBackOff` / `ErrImagePull` — container waiting reason
-   - `Pending: PVC` — pod phase Pending AND event mentioning unbound PVC
-   - `Pending: scheduling` — pod phase Pending AND event mentioning `FailedScheduling`
-   - `Probe failures` — events with reason `Unhealthy` mentioning probe
-   - `Init container failure` — initContainer status non-zero
-5. Uses **kubeconfig** discovery (`KUBECONFIG` env, then `~/.kube/config`).
-6. Read-only: never `kubectl exec`, never `delete`, never patch.
+1. CLI: `pod-doctor <namespace> <pod-name>` plus `--all-failing` flag.
+2. Output: plain text default; `-o json` for machine consumption.
+3. Sections: Summary, Status, Recent events, Logs, Diagnosis.
+4. Pattern matchers:
+   - CrashLoopBackOff
+   - OOMKilled
+   - ImagePullBackOff / ErrImagePull
+   - Pending: PVC unbound
+   - Pending: scheduling
+   - Probe failures
+   - Init container failure
+5. kubeconfig discovery (`KUBECONFIG`, then `~/.kube/config`, `--kubeconfig` override).
+6. Read-only — never `exec`, `delete`, `patch`.
 
 ## Out of scope
 
-- No remediation / auto-fix actions.
-- No multi-cluster / multi-context selection beyond the kubeconfig's current context.
-- No web UI / TUI.
-- No metrics-server integration (keep it simple — just events, status, logs).
-- No Slack / PagerDuty / Webhook integration.
-- No auto-discovery loops, no daemonset deployment.
+- No remediation / auto-fix
+- No multi-cluster / multi-context selection beyond current context
+- No web UI / TUI
+- No metrics-server integration
+- No Slack / PagerDuty / Webhook integration
+- No daemon mode
 
 ## Tech stack
 
 - **Language:** Go 1.22+
-- **Kubernetes client:** `k8s.io/client-go` v0.30+
-- **CLI framework:** `github.com/spf13/cobra` + `pflag`
-- **Colors:** `github.com/fatih/color` (auto-disabled when not a TTY or `NO_COLOR=1`)
-- **Output:** stdout for humans, JSON for `-o json` (encoding/json stdlib)
-- **Build:** Go modules + `Makefile`
+- **K8s client:** `k8s.io/client-go` v0.30+
+- **CLI:** `github.com/spf13/cobra` + `pflag`
+- **Colour:** `github.com/fatih/color`
+- **Build:** Go modules + Makefile
 - **Linting:** `golangci-lint`
-- **Testing:** standard `testing` + table-driven; mock the K8s API via
-  `client-go/kubernetes/fake`
-- **Releases:** GoReleaser (cross-compile to darwin/linux on amd64/arm64)
+- **Testing:** stdlib `testing` + `client-go/kubernetes/fake`
+- **Releases:** GoReleaser (cross-compile darwin/linux × amd64/arm64)
 
 ## File tree
 
@@ -71,32 +102,24 @@ k8s-pod-doctor/
   go.mod
   go.sum
   Makefile
-  cmd/
-    pod-doctor/
-      main.go
+  cmd/pod-doctor/main.go
   internal/
     diagnose/
-      collect.go         ← talks to the API: pod, events, logs
-      rules.go           ← pattern matchers
-      report.go          ← formatters (text + json)
-      types.go           ← Diagnosis, Finding, Severity
+      collect.go
+      rules.go
+      report.go
+      types.go
     diagnose_test/
-      rules_test.go      ← table tests using fixtures
-      collect_test.go    ← uses fake.Clientset
+      rules_test.go
+      collect_test.go
     fixtures/
-      pod_crashloop.yaml
-      pod_oomkilled.yaml
-      pod_imagepullbackoff.yaml
-      pod_pending_pvc.yaml
+      pod_*.yaml
       events_*.yaml
   .goreleaser.yaml
-  .github/
-    workflows/
-      ci.yml             ← lint + test + build
-      release.yml        ← runs on tag, publishes binaries via GoReleaser
-  docs/
-    screenshots/
-      demo.gif           ← terminal cast of pod-doctor diagnosing a broken pod
+  .github/workflows/
+    ci.yml
+    release.yml
+  docs/screenshots/demo.gif
 ```
 
 ## Step-by-step build
@@ -111,163 +134,70 @@ go get github.com/spf13/cobra@latest github.com/fatih/color@latest
 
 ### 2. `cmd/pod-doctor/main.go`
 
-Cobra root command:
-```
-pod-doctor [flags] <namespace> <pod-name>
-  -o, --output       string   "text"|"json" (default text)
-  --tail             int      log lines per container (default 20)
-  --kubeconfig       string   override kubeconfig path
-  --context          string   override kubeconfig context
-  --all-failing               diagnose all non-Running pods in namespace
-  -v, --verbose               include full container env (default false)
-```
-
-`pod-doctor --help` shows examples (a healthy pod, a CrashLoopBackOff pod).
+Cobra root: `pod-doctor [flags] <namespace> <pod-name>` plus `-o`/`--tail`/`--kubeconfig`/`--context`/`--all-failing`/`-v`. Help text with examples.
 
 ### 3. `internal/diagnose/collect.go`
 
-Builds a Kubernetes clientset from kubeconfig, then:
-- `GetPod(namespace, name)`
-- `ListEvents(namespace, fieldSelector="involvedObject.name=<pod>", limit=50)`
-- `GetLogs(namespace, pod, container, tailLines)`
-
-Wraps these into a `Snapshot` struct passed downstream.
+Build clientset from kubeconfig. Methods: `GetPod`, `ListEvents` (`fieldSelector="involvedObject.name=<pod>"`, limit 50), `GetLogs(container, tailLines)`. Wrap into `Snapshot`.
 
 ### 4. `internal/diagnose/rules.go`
 
 ```go
 type Finding struct {
-    Code        string   // "CrashLoopBackOff"
-    Severity    string   // "critical"|"warning"|"info"
-    Message     string
+    Code, Severity, Message string
     Suggestions []string
 }
-
 type Rule func(s *Snapshot) []Finding
-
-var allRules = []Rule{
-    crashLoopBackOffRule,
-    oomKilledRule,
-    imagePullBackOffRule,
-    pendingPvcRule,
-    pendingSchedulingRule,
-    probeFailureRule,
-    initContainerFailureRule,
-}
+var allRules = []Rule{ crashLoopBackOffRule, oomKilledRule, imagePullBackOffRule, pendingPvcRule, pendingSchedulingRule, probeFailureRule, initContainerFailureRule }
 ```
 
-Each rule is small and returns 0 or 1 Finding. Apply all rules → list of findings.
+Each rule small, returns 0 or 1 Finding.
 
 ### 5. `internal/diagnose/report.go`
 
-`RenderText(snapshot, findings, w io.Writer)` and
-`RenderJSON(snapshot, findings, w io.Writer)`.
-
-Text uses sectioned output with optional colour for severity:
-
-```
-╭─ pod/myapp-7c... in default ─────────────────────────────╮
-│ Verdict: CrashLoopBackOff (critical)                      │
-╰───────────────────────────────────────────────────────────╯
-
-Status
-  Phase: Running
-  Containers:
-    - api: image=myrepo/api:v1.2.3 restarts=12 lastTerminated=OOMKilled
-
-Recent events (last 10)
-  2m   Warning  BackOff       Back-off restarting failed container
-  2m   Normal   Pulled        Successfully pulled image "myrepo/api:v1.2.3"
-  ...
-
-Logs (api, last 20)
-  2026-06-05T14:01 fatal error: runtime: out of memory
-  ...
-
-Diagnosis
-  • CrashLoopBackOff (critical)
-    The container has restarted 12 times. Last exit was OOMKilled.
-    Suggestions:
-      - Bump memory limits or fix the leak
-      - Check `kubectl top pod` for trend
-      - Inspect logs above for stack traces
-```
-
-JSON output is the same data shaped for `jq`.
+`RenderText(snapshot, findings, w)` and `RenderJSON(snapshot, findings, w)`. Text uses sectioned output with severity colour.
 
 ### 6. Tests
 
-Table-driven rules tests using YAML fixtures (`fixtures/pod_*.yaml`) parsed
-into pod/events fakes. Goal: every rule has at least one positive and one
-negative test.
-
-`collect_test.go` uses `kubernetes/fake.NewSimpleClientset(pod, event,...)`
-to verify Snapshot construction.
+Table-driven with YAML fixtures. Every rule: positive + negative test. `collect_test.go` uses `fake.NewSimpleClientset`.
 
 ### 7. CI
 
-`.github/workflows/ci.yml`:
-- Setup Go 1.22
-- `go vet ./...`
-- `golangci-lint run`
-- `go test ./...`
-- `go build ./cmd/pod-doctor` (sanity)
+`go vet ./...`; `golangci-lint run`; `go test ./...`; `go build ./cmd/pod-doctor`.
 
 ### 8. Release
 
-`.github/workflows/release.yml` runs on `v*` tags and uses GoReleaser to:
-- Cross-compile to darwin-amd64, darwin-arm64, linux-amd64, linux-arm64
-- Attach binaries + checksums to the GitHub Release
-- (Optional) push a Homebrew tap formula — defer; v1 ships GitHub Releases only
-
-`.goreleaser.yaml`: minimal config naming the binary `pod-doctor`.
+GoReleaser cross-compiles to darwin-amd64/arm64, linux-amd64/arm64. Attach binaries + checksums to GitHub Release on `v*` tag.
 
 ### 9. README
 
-1. **Title** — *k8s-pod-doctor — One command to diagnose a sick Kubernetes pod*
-2. **Demo** — `docs/screenshots/demo.gif`
-3. **What it shows** — read-only diagnosis, pattern matchers, JSON output for piping
-4. **Skills demonstrated** — Kubernetes, SRE, Go, CLI development, client-go, GoReleaser
-5. **Install**:
-   ```bash
-   curl -sSL https://github.com/NoobCoder1209/k8s-pod-doctor/releases/latest/download/pod-doctor-linux-amd64 -o /usr/local/bin/pod-doctor
-   chmod +x /usr/local/bin/pod-doctor
-   # or: go install github.com/NoobCoder1209/k8s-pod-doctor/cmd/pod-doctor@latest
-   ```
-6. **Quick start**:
-   ```bash
-   pod-doctor default broken-pod-7c
-   pod-doctor --all-failing default
-   pod-doctor default broken-pod-7c -o json | jq .findings
-   ```
-7. **Patterns supported** — table of matchers + suggestions
-8. **License** — MIT
+1. Title — *k8s-pod-doctor — One command to diagnose a sick Kubernetes pod*
+2. Demo — `docs/screenshots/demo.gif`
+3. What it shows — read-only diagnosis, pattern matchers, JSON output for piping
+4. Skills demonstrated — Kubernetes, SRE, Go, CLI development, client-go, GoReleaser
+5. Install — `curl | install` + `go install` snippets
+6. Quick start examples
+7. Patterns supported — table
+8. License — MIT
 
 ### 10. Polish + flip public
 
-Record GIF on a kind cluster with a deliberately broken pod (e.g.
-`image: nginx:notreal` for ImagePullBackOff, OR a memory-hungry container
-for OOMKilled). Topics: `kubernetes`, `sre`, `cli`, `go`, `troubleshooting`,
-`client-go`. Flip public.
+GIF on kind. Topics: `kubernetes`, `sre`, `cli`, `go`, `troubleshooting`, `client-go`. Ask user before flipping.
 
 ## Verification
 
 - [ ] `go build ./cmd/pod-doctor` works on Go 1.22
-- [ ] `pod-doctor default broken-pod` produces a sensible report against a
-      real broken pod in a kind cluster
-- [ ] Each rule has at least one passing positive and one negative test
-- [ ] `-o json` validates against a documented schema (just publish the schema
-      in `docs/output.schema.json`)
-- [ ] No SAP-specific assumptions (namespaces, label keys, image registries)
-- [ ] No `~/.claude/` references, nothing imported from Aleksandar's tools
-- [ ] Release pipeline produces working binaries for darwin and linux on at least amd64
+- [ ] Real broken pod in kind cluster produces sensible report
+- [ ] Each rule has positive + negative test
+- [ ] `-o json` validates against documented schema in `docs/output.schema.json`
+- [ ] No SAP-specific assumptions (namespaces, labels, registries)
+- [ ] No `~/.claude/` references
+- [ ] Release pipeline produces working binaries (darwin, linux × amd64 minimum)
 - [ ] Topics + description set
 
 ## Stretch (defer)
 
-- `--watch` mode (re-runs on tick)
-- `metrics-server` integration ("memory at 92% of limit, crashed soon after")
+- `--watch` mode
+- `metrics-server` integration ("memory at 92% of limit")
 - Slack-friendly markdown output (`-o slack`)
-- A `--remediate` flag that prints the exact `kubectl` commands to try next
-
-v2 — out of v1 scope.
+- `--remediate` (prints next-step kubectl commands)
