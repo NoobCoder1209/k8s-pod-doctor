@@ -64,11 +64,8 @@
       "items": { "$ref": "#/$defs/Finding" }
     },
     "verdict": {
-      "description": "The highest-priority finding, or null/absent if the pod is healthy.",
-      "oneOf": [
-        { "$ref": "#/$defs/Finding" },
-        { "type": "null" }
-      ]
+      "$ref": "#/$defs/Finding",
+      "description": "The highest-priority finding. ABSENT (key not present) when healthy is true."
     },
     "healthy": {
       "type": "boolean",
@@ -97,10 +94,11 @@
       "properties": {
         "code": {
           "type": "string",
-          "description": "Stable code, e.g. CrashLoopBackOff, OOMKilled, ImagePullBackOff, ProbeFailure, PendingScheduling, PendingVolume, InitContainerFailure."
+          "description": "Stable rule code. Currently emitted: PendingScheduling, PendingVolume, InitContainerFailure, ImagePullBackOff, OOMKilled, ProbeFailure, CrashLoopBackOff. New rules add to this set; existing codes never change meaning."
         },
         "severity": {
           "type": "string",
+          "description": "Severity tier. Rules currently emit 'critical' or 'warning'; 'info' and 'healthy' are reserved (the latter is used as a synthetic banner severity in the text renderer for healthy pods, never in JSON findings).",
           "enum": ["critical", "warning", "info", "healthy"]
         },
         "title": { "type": "string" },

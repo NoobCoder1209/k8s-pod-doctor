@@ -8,9 +8,17 @@ import (
 )
 
 // BuildClient builds a kubernetes.Interface honouring the canonical kubeconfig
-// precedence: --kubeconfig flag > $KUBECONFIG > ~/.kube/config. Returning an
-// interface (not a concrete *Clientset) makes tests substitutable with
-// fake.NewSimpleClientset.
+// precedence:
+//
+//  1. --kubeconfig flag (highest)        — wired via rules.ExplicitPath
+//  2. $KUBECONFIG env (colon-separated)  — read by NewDefaultClientConfigLoadingRules
+//  3. ~/.kube/config                     — final default by NewDefaultClientConfigLoadingRules
+//
+// --context is wired through ConfigOverrides.CurrentContext, overriding the
+// `current-context` field of whichever kubeconfig was selected.
+//
+// Returning an interface (not a concrete *Clientset) makes tests substitutable
+// with fake.NewSimpleClientset.
 func BuildClient(kubeconfig, kubeContext string) (kubernetes.Interface, error) {
 	rules := clientcmd.NewDefaultClientConfigLoadingRules()
 	if kubeconfig != "" {

@@ -60,7 +60,6 @@ Examples:
 	f.StringVarP(&opts.Output, "output", "o", "text", "output format: text|json")
 	f.Int64Var(&opts.Tail, "tail", 100, "lines of recent logs to include per container")
 	f.BoolVar(&opts.AllFailing, "all-failing", false, "diagnose every non-Running pod in the cluster")
-	f.BoolVarP(&opts.Verbose, "verbose", "v", false, "include extra diagnostic detail")
 	f.BoolVar(&opts.NoColor, "no-color", false, "disable ANSI colour output (also via NO_COLOR env)")
 
 	cmd.AddCommand(newVersionCmd())

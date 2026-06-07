@@ -29,6 +29,12 @@ When you `kubectl describe pod` and `kubectl logs` and `kubectl get events`
 to debug a sick pod, you do the same correlation in your head every single
 time. `pod-doctor` does it for you and spits out a verdict.
 
+What sets it apart from a `describe + logs + events` mash-up is **priority-
+aware verdict suppression**: when a container is OOMKilled and consequently
+in `CrashLoopBackOff`, the OOM is the cause and the loop is the symptom.
+`pod-doctor` surfaces OOMKilled as the verdict and suppresses the redundant
+CrashLoop finding for that container — see [verdict picking](#how-verdict-picking-works).
+
 ```text
 ╔════════════════════════════════════════════════════════════╗
 ║  ✖  CRITICAL: Container web cannot pull image              ║
@@ -194,13 +200,21 @@ pod-doctor --all-failing -o json | jq -r '.[] | "\(.pod.namespace)/\(.pod.name):
       "evidence": ["state.waiting.reason=ImagePullBackOff", "..."]
     }
   ],
-  "verdict": { "code": "ImagePullBackOff", "...": "..." },
+  "verdict": {
+    "code": "ImagePullBackOff",
+    "severity": "critical",
+    "title": "Container web cannot pull image",
+    "message": "Image \"nginx:notreal\" cannot be pulled: ImagePullBackOff — Back-off pulling image"
+  },
   "healthy": false
 }
 ```
 
 `schemaVersion` will only bump on a breaking change. New fields are added
-without a version bump.
+without a version bump. Healthy pods omit the `verdict` key entirely. See
+[`docs/output.schema.json`](docs/output.schema.json) for the full schema;
+the example above elides several optional summary fields (`startTime`,
+`initContainerStatuses`, `logErrors`).
 
 ## Flags
 
@@ -211,7 +225,6 @@ without a version bump.
 | `-o, --output` | `text` | `text` or `json` |
 | `--tail` | `100` | Lines of recent logs to include per container |
 | `--all-failing` | `false` | Diagnose every non-Running pod in the cluster |
-| `-v, --verbose` | `false` | Include extra detail |
 | `--no-color` | `false` | Disable ANSI colour (also via `NO_COLOR` env) |
 
 ## Build from source
