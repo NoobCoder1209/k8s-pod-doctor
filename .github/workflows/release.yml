@@ -28,7 +28,6 @@ jobs:
           args: release --clean
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-          # Uncomment when the Homebrew tap stanza in .goreleaser.yaml is enabled.
-          # Requires HOMEBREW_TAP_GITHUB_TOKEN repo secret with write access to
-          # the tap repo (e.g. NoobCoder1209/homebrew-tap).
-          # HOMEBREW_TAP_GITHUB_TOKEN: ${{ secrets.HOMEBREW_TAP_GITHUB_TOKEN }}
+          # Required for the brews stanza in .goreleaser.yaml — a PAT with
+          # write access to NoobCoder1209/homebrew-tap.
+          HOMEBREW_TAP_GITHUB_TOKEN: ${{ secrets.HOMEBREW_TAP_GITHUB_TOKEN }}
