@@ -1,0 +1,36 @@
+# Binaries
+/pod-doctor
+/dist/
+*.test
+*.out
+coverage.*
+
+# Editor / OS
+.idea/
+.vscode/
+.DS_Store
+*.swp
+
+# Defensive — never commit anything credential-shaped, even though
+# pod-doctor itself does not read secrets.
+.env
+.env.*
+*.env
+kubeconfig
+kubeconfig.*
+*.kubeconfig
+.kube/
+.secret
+*.secret
+secrets.*
+credentials.*
+*.key
+*.pem
+*.p12
+
+# GoReleaser snapshot output
+/dist/
+
+# Local notes
+NOTES.md
+TODO.local
