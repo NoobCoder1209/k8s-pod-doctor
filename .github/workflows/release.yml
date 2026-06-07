@@ -18,7 +18,6 @@ jobs:
       - uses: actions/setup-go@v5
         with:
           go-version: '1.22'
-          check-latest: true
           cache: true
 
       - name: GoReleaser
@@ -29,6 +28,7 @@ jobs:
           args: release --clean
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-          # HOMEBREW_TAP_GITHUB_TOKEN required if a Homebrew tap is wired in
-          # .goreleaser.yaml — set it as a repo secret pointing at the tap repo.
-          HOMEBREW_TAP_GITHUB_TOKEN: ${{ secrets.HOMEBREW_TAP_GITHUB_TOKEN }}
+          # Uncomment when the Homebrew tap stanza in .goreleaser.yaml is enabled.
+          # Requires HOMEBREW_TAP_GITHUB_TOKEN repo secret with write access to
+          # the tap repo (e.g. NoobCoder1209/homebrew-tap).
+          # HOMEBREW_TAP_GITHUB_TOKEN: ${{ secrets.HOMEBREW_TAP_GITHUB_TOKEN }}

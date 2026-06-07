@@ -22,19 +22,25 @@ status, recent events, container log tails, and a verdict naming the most
 common failure modes (CrashLoopBackOff, OOMKilled, ImagePullBackOff,
 scheduling failures, PVC issues, probe failures, init container failures).
 
-It is strictly read-only — never exec, delete, or patch.
+It is strictly read-only - never exec, delete, or patch.
 
 Examples:
   pod-doctor default web-7d9f-abc
-  pod-doctor --kubeconfig ~/.kube/dev kube-system coredns-xyz
+  pod-doctor --kubeconfig=$HOME/.kube/dev kube-system coredns-xyz
   pod-doctor --all-failing -o json | jq '.[] | .verdict'
 `,
-		Args: cobra.MatchAll(validateArgsOrAllFailing(&opts)),
+		// Cobra parses flags before invoking Args, so opts.AllFailing is
+		// populated when validateArgsOrAllFailing runs.
+		Args: validateArgsOrAllFailing(&opts),
 
 		// Both silenced: cobra won't print errors or usage on RunE failure.
 		// main.go formats the single-line stderr message itself.
 		SilenceUsage:  true,
 		SilenceErrors: true,
+
+		PreRunE: func(cmd *cobra.Command, _ []string) error {
+			return validateOptions(&opts)
+		},
 
 		RunE: func(cmd *cobra.Command, args []string) error {
 			if !opts.AllFailing {
@@ -78,14 +84,27 @@ func validateArgsOrAllFailing(opts *doctor.Options) cobra.PositionalArgs {
 	}
 }
 
+// validateOptions performs CLI-boundary validation that should fail before
+// any kubeconfig or cluster work happens.
+func validateOptions(opts *doctor.Options) error {
+	switch opts.Output {
+	case "", "text", "json":
+	default:
+		return fmt.Errorf("invalid --output %q (want text|json)", opts.Output)
+	}
+	if opts.Tail < 0 {
+		return fmt.Errorf("--tail must be >= 0, got %d", opts.Tail)
+	}
+	return nil
+}
+
 func newVersionCmd() *cobra.Command {
 	return &cobra.Command{
 		Use:   "version",
 		Short: "Print version information",
 		Args:  cobra.NoArgs,
 		RunE: func(cmd *cobra.Command, _ []string) error {
-			fmt.Fprintf(cmd.OutOrStdout(), "pod-doctor %s (%s, %s)\n",
-				version.Version, version.Commit, version.Date)
+			fmt.Fprintf(cmd.OutOrStdout(), "pod-doctor %s\n", version.String())
 			return nil
 		},
 	}

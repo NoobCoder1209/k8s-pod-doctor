@@ -1,6 +1,5 @@
 # Binaries
 /pod-doctor
-/dist/
 *.test
 *.out
 coverage.*
