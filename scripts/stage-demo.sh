@@ -2,20 +2,31 @@
 # stage-demo.sh — bring up a kind cluster and three deliberately broken pods
 # for the README demo GIF.
 #
-# Idempotent: re-running deletes and re-creates the cluster. Safe to run
-# multiple times.
+# Idempotent: re-running deletes and re-creates the cluster.
 #
 # Usage:
 #   ./scripts/stage-demo.sh
+#
+# Then:
+#   make build
+#   vhs scripts/demo.tape   # uses KUBECONFIG_PATH that this script wrote
 #
 # Requires: kind, kubectl, docker.
 
 set -euo pipefail
 
 CLUSTER_NAME="${CLUSTER_NAME:-pod-doctor-demo}"
+# Keep this path in sync with scripts/demo.tape.
+KUBECONFIG_PATH="${KUBECONFIG_PATH:-/tmp/pod-doctor-demo.kubeconfig}"
 
-if ! command -v kind >/dev/null; then
-  echo "kind not found. Install: https://kind.sigs.k8s.io/" >&2
+for cmd in kind kubectl docker; do
+  if ! command -v "$cmd" >/dev/null; then
+    echo "$cmd not found on \$PATH" >&2
+    exit 1
+  fi
+done
+if ! docker info >/dev/null 2>&1; then
+  echo "Docker daemon is not running (try Docker Desktop / colima)" >&2
   exit 1
 fi
 
@@ -27,9 +38,8 @@ fi
 echo "==> Creating cluster ${CLUSTER_NAME}"
 kind create cluster --name "${CLUSTER_NAME}" --wait 60s
 
-KUBECONFIG="$(mktemp)"
-export KUBECONFIG
-kind get kubeconfig --name "${CLUSTER_NAME}" > "${KUBECONFIG}"
+kind get kubeconfig --name "${CLUSTER_NAME}" > "${KUBECONFIG_PATH}"
+export KUBECONFIG="${KUBECONFIG_PATH}"
 
 echo "==> Applying broken pods"
 
@@ -77,12 +87,23 @@ spec:
     command: ["sh", "-c", "echo 'starting up...'; sleep 1; echo 'panic: something went wrong'; exit 1"]
 YAML
 
-echo "==> Waiting ~45s for pods to enter their broken states"
-sleep 45
+echo "==> Waiting for pods to enter their broken states"
 
-echo "==> Cluster ready. Set:"
-echo "  export KUBECONFIG=${KUBECONFIG}"
-echo "  pod-doctor default broken-image"
-echo "  pod-doctor default broken-oom"
-echo "  pod-doctor default broken-crash"
-echo "  pod-doctor --all-failing"
+# Each pod has its own deterministic broken state. Polling beats sleep.
+kubectl wait --for=jsonpath='{.status.containerStatuses[0].state.waiting.reason}'=ImagePullBackOff \
+  pod/broken-image --timeout=180s || true
+
+# OOM and crash both cycle through CrashLoopBackOff once they've been killed
+# at least twice. Wait until restartCount >= 2 to be sure.
+for pod in broken-oom broken-crash; do
+  for _ in $(seq 1 60); do
+    rc="$(kubectl get pod "$pod" -o jsonpath='{.status.containerStatuses[0].restartCount}' 2>/dev/null || echo 0)"
+    if [[ "$rc" -ge 2 ]]; then break; fi
+    sleep 2
+  done
+done
+
+echo
+echo "==> Cluster ready."
+echo "    KUBECONFIG written to: ${KUBECONFIG_PATH}"
+echo "    Run:  vhs scripts/demo.tape"

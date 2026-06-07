@@ -29,7 +29,9 @@ builds:
 archives:
   - id: default
     formats: [tar.gz]
-    name_template: '{{ .ProjectName }}_{{ .Version }}_{{ title .Os }}_{{ if eq .Arch "amd64" }}x86_64{{ else if eq .Arch "386" }}i386{{ else }}{{ .Arch }}{{ end }}'
+    # Drop {{ .Version }} from the name so README's `latest/download/`
+    # URLs (which don't include a version) keep working across releases.
+    name_template: '{{ .ProjectName }}_{{ title .Os }}_{{ if eq .Arch "amd64" }}x86_64{{ else if eq .Arch "386" }}i386{{ else }}{{ .Arch }}{{ end }}'
     format_overrides:
       - goos: windows
         formats: [zip]

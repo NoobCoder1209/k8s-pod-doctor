@@ -1,9 +1,11 @@
 # pod-doctor demo tape — run with:  vhs scripts/demo.tape
 #
 # Prerequisites:
-#   1. ./scripts/stage-demo.sh          (kind cluster + 3 broken pods)
-#   2. kind get kubeconfig --name pod-doctor-demo > /tmp/pod-doctor-demo.kubeconfig
-#   3. make build                       (produces ./pod-doctor)
+#   1. ./scripts/stage-demo.sh   (kind cluster + 3 broken pods; writes
+#                                  /tmp/pod-doctor-demo.kubeconfig)
+#   2. make build                (produces ./pod-doctor)
+#
+# stage-demo.sh and this tape share a deterministic KUBECONFIG path.
 #
 # Output: docs/screenshots/demo.gif
 
@@ -19,7 +21,7 @@ Set PlaybackSpeed 1.0
 Hide
 Type "export KUBECONFIG=/tmp/pod-doctor-demo.kubeconfig && clear"
 Enter
-Sleep 500ms
+Sleep 800ms
 Show
 
 Type "# 1. ImagePullBackOff — typo'd image tag"
