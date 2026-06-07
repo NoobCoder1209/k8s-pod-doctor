@@ -71,6 +71,14 @@ pattern-matcher that names the most common failure modes.
 5. kubeconfig discovery (`KUBECONFIG`, then `~/.kube/config`, `--kubeconfig` override).
 6. Read-only — never `exec`, `delete`, `patch`.
 
+## Production hygiene (must apply, not optional)
+
+Inherits the master plan's "Production hygiene checklist." Repo-specific application:
+
+- **Global error handling at the CLI boundary.** Wrap Cobra `RunE` so any returned error becomes one short, friendly stderr line + non-zero exit. **Never print a Go stack trace to the user** unless `--debug` (deferred).
+- **Friendly errors for the obvious miss-cases:** missing kubeconfig, unreachable cluster, pod not found, no events, container not yet started. Each gets its own one-line message with a hint.
+- **No secrets.** `.gitignore` blocks `.env*` and `kubeconfig*` defensively even though the binary doesn't read either.
+
 ## Out of scope
 
 - No remediation / auto-fix
@@ -192,6 +200,8 @@ GIF on kind. Topics: `kubernetes`, `sre`, `cli`, `go`, `troubleshooting`, `clien
 - [ ] `-o json` validates against documented schema in `docs/output.schema.json`
 - [ ] No SAP-specific assumptions (namespaces, labels, registries)
 - [ ] No `~/.claude/` references
+- [ ] Missing kubeconfig / unreachable cluster / pod-not-found each produces a one-line friendly error, not a Go stack trace
+- [ ] `.gitignore` blocks `kubeconfig*` and `.env*` defensively
 - [ ] Release pipeline produces working binaries (darwin, linux × amd64 minimum)
 - [ ] Topics + description set
 
