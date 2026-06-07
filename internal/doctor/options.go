@@ -13,6 +13,5 @@ type Options struct {
 
 	Output  string `json:"output,omitempty"` // "text" | "json"
 	Tail    int64  `json:"tail,omitempty"`
-	Verbose bool   `json:"verbose,omitempty"`
 	NoColor bool   `json:"noColor,omitempty"`
 }

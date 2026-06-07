@@ -1,0 +1,122 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://github.com/NoobCoder1209/k8s-pod-doctor/docs/output.schema.json",
+  "title": "k8s-pod-doctor diagnosis report",
+  "description": "Output schema for `pod-doctor -o json`. Versioned via `schemaVersion`. New fields are additive without a version bump; breaking changes bump the version.",
+  "type": "object",
+  "required": ["schemaVersion", "tool", "toolVersion", "generatedAt", "pod", "summary", "findings", "healthy"],
+  "properties": {
+    "schemaVersion": {
+      "type": "string",
+      "const": "1"
+    },
+    "tool": {
+      "type": "string",
+      "const": "k8s-pod-doctor"
+    },
+    "toolVersion": {
+      "type": "string",
+      "description": "ldflags-injected build version, e.g. v0.1.0 or 'dev'."
+    },
+    "generatedAt": {
+      "type": "string",
+      "format": "date-time"
+    },
+    "pod": {
+      "type": "object",
+      "required": ["namespace", "name"],
+      "properties": {
+        "namespace": { "type": "string" },
+        "name": { "type": "string" },
+        "uid": { "type": "string" },
+        "phase": { "type": "string" }
+      }
+    },
+    "summary": {
+      "type": "object",
+      "properties": {
+        "phase": { "type": "string" },
+        "nodeName": { "type": "string" },
+        "startTime": { "type": "string", "format": "date-time" },
+        "conditions": {
+          "type": "object",
+          "additionalProperties": { "type": "string" }
+        },
+        "containerStatuses": {
+          "type": "array",
+          "items": { "$ref": "#/$defs/ContainerBrief" }
+        },
+        "initContainerStatuses": {
+          "type": "array",
+          "items": { "$ref": "#/$defs/ContainerBrief" }
+        },
+        "eventCount": { "type": "integer", "minimum": 0 },
+        "logErrors": {
+          "type": "object",
+          "description": "Map of container name to short reason we couldn't fetch its logs.",
+          "additionalProperties": { "type": "string" }
+        }
+      }
+    },
+    "findings": {
+      "type": "array",
+      "description": "All findings, sorted by priority then severity. Empty array (not null) on a healthy pod.",
+      "items": { "$ref": "#/$defs/Finding" }
+    },
+    "verdict": {
+      "$ref": "#/$defs/Finding",
+      "description": "The highest-priority finding. ABSENT (key not present) when healthy is true."
+    },
+    "healthy": {
+      "type": "boolean",
+      "description": "True iff no rule fired."
+    }
+  },
+  "$defs": {
+    "ContainerBrief": {
+      "type": "object",
+      "required": ["name", "ready", "restartCount"],
+      "properties": {
+        "name": { "type": "string" },
+        "ready": { "type": "boolean" },
+        "restartCount": { "type": "integer", "minimum": 0 },
+        "state": {
+          "type": "string",
+          "enum": ["running", "waiting", "terminated"]
+        },
+        "reason": { "type": "string" },
+        "exitCode": { "type": "integer" }
+      }
+    },
+    "Finding": {
+      "type": "object",
+      "required": ["code", "severity", "title", "message"],
+      "properties": {
+        "code": {
+          "type": "string",
+          "description": "Stable rule code. Currently emitted: PendingScheduling, PendingVolume, InitContainerFailure, ImagePullBackOff, OOMKilled, ProbeFailure, CrashLoopBackOff. New rules add to this set; existing codes never change meaning."
+        },
+        "severity": {
+          "type": "string",
+          "description": "Severity tier. Rules currently emit 'critical' or 'warning'; 'info' and 'healthy' are reserved (the latter is used as a synthetic banner severity in the text renderer for healthy pods, never in JSON findings).",
+          "enum": ["critical", "warning", "info", "healthy"]
+        },
+        "title": { "type": "string" },
+        "message": { "type": "string" },
+        "container": {
+          "type": "string",
+          "description": "Container name when the finding is container-scoped; absent for pod-level findings."
+        },
+        "suggestions": {
+          "type": "array",
+          "items": { "type": "string" }
+        },
+        "evidence": {
+          "type": "array",
+          "items": { "type": "string" },
+          "description": "Raw status/event snippets that triggered the finding."
+        }
+      }
+    }
+  }
+}
