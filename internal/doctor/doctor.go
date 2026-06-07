@@ -46,14 +46,19 @@ func Run(ctx context.Context, opts Options, r Renderer, out io.Writer) error {
 }
 
 // friendlyKubeconfigError converts the most common client-go / clientcmd
-// errors into a one-line stderr message users can act on.
+// errors into a one-line stderr message users can act on. This is best-effort
+// substring matching; unknown errors fall through unchanged.
 func friendlyKubeconfigError(err error) error {
 	msg := err.Error()
 	switch {
-	case strings.Contains(msg, "no such file or directory") && strings.Contains(msg, "kubeconfig"):
-		return errors.New("no kubeconfig found (set $KUBECONFIG or pass --kubeconfig)")
+	case strings.Contains(msg, "no configuration has been provided"):
+		return errors.New("no kubeconfig found (set $KUBECONFIG, run `kubectl config`, or pass --kubeconfig)")
+	case strings.Contains(msg, "no such file or directory") && strings.Contains(strings.ToLower(msg), "kubeconfig"):
+		return errors.New("kubeconfig path does not exist (check --kubeconfig or $KUBECONFIG)")
 	case strings.Contains(msg, "could not be loaded") || strings.Contains(msg, "stat "):
 		return errors.New("kubeconfig file is not readable (check the path and permissions)")
+	case strings.Contains(msg, "context") && strings.Contains(msg, "does not exist"):
+		return fmt.Errorf("kubeconfig context not found: %s", err)
 	}
 	return err
 }
@@ -116,9 +121,12 @@ func runAllFailing(ctx context.Context, client kubernetes.Interface, opts Option
 
 // renderAllJSON emits a JSON array of one Report per pod. Pods whose snapshot
 // fails are emitted as {"pod": {...}, "error": "..."} placeholders so the
-// output stays valid JSON and downstream tools can see the failures.
-func renderAllJSON(ctx context.Context, client kubernetes.Interface, r Renderer, out io.Writer, failing []corev1.Pod, tail int64) error {
+// output stays valid JSON and downstream tools can see the failures. The
+// closing `]` is always emitted, even if the renderer errors mid-stream.
+func renderAllJSON(ctx context.Context, client kubernetes.Interface, r Renderer, out io.Writer, failing []corev1.Pod, tail int64) (retErr error) {
 	fmt.Fprint(out, "[")
+	defer fmt.Fprintln(out, "]")
+
 	first := true
 	for _, p := range failing {
 		if !first {
@@ -134,10 +142,15 @@ func renderAllJSON(ctx context.Context, client kubernetes.Interface, r Renderer,
 		}
 		verdict, findings, healthy := Diagnose(snap)
 		if err := r.RenderJSON(out, snap, verdict, ensureSlice(findings), healthy, version.Version, time.Now()); err != nil {
-			return err
+			retErr = err
+			// Emit a placeholder so the array element count matches the
+			// failing-pod count, then bail out cleanly. The deferred `]`
+			// ensures the document is still valid JSON.
+			fmt.Fprintf(out, `,{"pod":{"namespace":%q,"name":%q},"error":%q}`,
+				p.Namespace, p.Name, "render failed: "+err.Error())
+			return retErr
 		}
 	}
-	fmt.Fprintln(out, "]")
 	return nil
 }
 

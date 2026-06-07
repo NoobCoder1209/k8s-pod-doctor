@@ -2,9 +2,14 @@ package doctor
 
 import (
 	"fmt"
+	"regexp"
 
 	corev1 "k8s.io/api/core/v1"
 )
+
+// volumeRefRegex extracts a volume name from kubelet mount-error messages
+// like `MountVolume.SetUp failed for volume "config" : ...`.
+var volumeRefRegex = regexp.MustCompile(`volume "([^"]+)"`)
 
 // pendingVolumeRule fires when the pod is blocked on a volume failing to
 // attach, mount, or provision. Covers PVCs (most common) but also surfaces
@@ -12,7 +17,6 @@ import (
 func pendingVolumeRule(s *Snapshot) []Finding {
 	p := s.Pod
 
-	// Look for any volume-related event reason.
 	mountEv := firstEventByReason(s,
 		"FailedAttachVolume", "FailedMount",
 		"ProvisioningFailed", "WaitForFirstConsumer",
@@ -29,7 +33,19 @@ func pendingVolumeRule(s *Snapshot) []Finding {
 		}
 	}
 
-	volName, claimName := firstPVCRef(p)
+	// Identify the failing volume — prefer the one named in the event message
+	// (correct when the pod has multiple volumes), fall back to the first PVC.
+	volName := ""
+	if mountEv != nil {
+		if m := volumeRefRegex.FindStringSubmatch(mountEv.Message); len(m) == 2 {
+			volName = m[1]
+		}
+	}
+	claimName := claimNameForVolume(p, volName)
+	if volName == "" {
+		volName, claimName = firstPVCRef(p)
+	}
+
 	reason := ""
 	switch {
 	case mountEv != nil:
@@ -49,12 +65,23 @@ func pendingVolumeRule(s *Snapshot) []Finding {
 		"Check StorageClass / Secret / ConfigMap referenced by the pod's volumes")
 
 	message := "A volume required by this pod is not ready"
-	if claimName != "" {
+	switch {
+	case claimName != "":
 		message = fmt.Sprintf("Volume %q (PVC %q) is not ready: %s", volName, claimName, reason)
-	} else if mountEv != nil {
+	case volName != "":
+		message = fmt.Sprintf("Volume %q is not ready: %s — %s", volName, reason, oneline(mountEv.Message))
+	case mountEv != nil:
 		message = fmt.Sprintf("Volume mount failed: %s — %s", reason, oneline(mountEv.Message))
-	} else {
+	default:
 		message = fmt.Sprintf("Pod cannot finish initialisation: %s", reason)
+	}
+
+	evidence := []string{}
+	if mountEv != nil {
+		evidence = append(evidence, "event "+briefEvent(mountEv))
+	} else if initCond != nil {
+		evidence = append(evidence,
+			fmt.Sprintf("condition PodInitialized=False, reason=%s", initCond.Reason))
 	}
 
 	return []Finding{{
@@ -64,10 +91,22 @@ func pendingVolumeRule(s *Snapshot) []Finding {
 		Title:       "Pod blocked on volume",
 		Message:     message,
 		Suggestions: suggestions,
-		Evidence: []string{
-			"event " + briefEvent(mountEv),
-		},
+		Evidence:    evidence,
 	}}
+}
+
+// claimNameForVolume returns the PVC claim name for a given volume name on the
+// pod, or "" if the volume is not a PVC.
+func claimNameForVolume(p *corev1.Pod, volName string) string {
+	if volName == "" {
+		return ""
+	}
+	for _, v := range p.Spec.Volumes {
+		if v.Name == volName && v.PersistentVolumeClaim != nil {
+			return v.PersistentVolumeClaim.ClaimName
+		}
+	}
+	return ""
 }
 
 // firstPVCRef returns the first PVC volume's (volume name, claim name) — or

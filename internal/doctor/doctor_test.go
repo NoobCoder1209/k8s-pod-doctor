@@ -4,13 +4,13 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
+	"errors"
 	"io"
 	"testing"
 	"time"
 
 	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
-	"k8s.io/client-go/kubernetes"
 	"k8s.io/client-go/kubernetes/fake"
 )
 
@@ -40,7 +40,7 @@ func TestGetPod_NotFoundIsTyped(t *testing.T) {
 	if err == nil {
 		t.Fatal("want error")
 	}
-	if !errorsIs(err, ErrPodNotFound) {
+	if !errors.Is(err, ErrPodNotFound) {
 		t.Fatalf("want ErrPodNotFound, got %v", err)
 	}
 }
@@ -128,23 +128,7 @@ func TestRunAllFailing_JSON_SkipsBadPodAndStaysValidJSON(t *testing.T) {
 }
 
 // helpers
-func errorsIs(err, target error) bool {
-	for err != nil {
-		if err == target {
-			return true
-		}
-		u, ok := err.(interface{ Unwrap() error })
-		if !ok {
-			return false
-		}
-		err = u.Unwrap()
-	}
-	return false
-}
 
 func contains(haystack, needle string) bool {
 	return bytes.Contains([]byte(haystack), []byte(needle))
 }
-
-// keep client-go test util present so import doesn't get pruned in tidy
-var _ kubernetes.Interface = (*fake.Clientset)(nil)
