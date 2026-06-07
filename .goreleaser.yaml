@@ -50,17 +50,17 @@ changelog:
       - Merge pull request
       - Merge branch
 
-# Homebrew tap — uncomment after creating github.com/NoobCoder1209/homebrew-tap
-# and adding HOMEBREW_TAP_GITHUB_TOKEN repo secret.
-#
-# brews:
-#   - name: pod-doctor
-#     repository:
-#       owner: NoobCoder1209
-#       name: homebrew-tap
-#       token: '{{ .Env.HOMEBREW_TAP_GITHUB_TOKEN }}'
-#     homepage: https://github.com/NoobCoder1209/k8s-pod-doctor
-#     description: One command to diagnose a sick Kubernetes pod
-#     license: MIT
-#     test: |
-#       system "#{bin}/pod-doctor", "version"
+# Homebrew tap. Requires HOMEBREW_TAP_GITHUB_TOKEN repo secret with write
+# access to github.com/NoobCoder1209/homebrew-tap. The release workflow
+# passes that secret through; see .github/workflows/release.yml.
+brews:
+  - name: pod-doctor
+    repository:
+      owner: NoobCoder1209
+      name: homebrew-tap
+      token: '{{ .Env.HOMEBREW_TAP_GITHUB_TOKEN }}'
+    homepage: https://github.com/NoobCoder1209/k8s-pod-doctor
+    description: One command to diagnose a sick Kubernetes pod
+    license: MIT
+    test: |
+      system "#{bin}/pod-doctor", "version"
