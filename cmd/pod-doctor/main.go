@@ -7,14 +7,9 @@ import (
 	"os"
 	"os/signal"
 	"syscall"
-
-	"github.com/NoobCoder1209/k8s-pod-doctor/internal/doctor"
-	"github.com/NoobCoder1209/k8s-pod-doctor/internal/render"
 )
 
 func main() {
-	doctor.SetRenderer(render.Adapter{})
-
 	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
 	defer stop()
 

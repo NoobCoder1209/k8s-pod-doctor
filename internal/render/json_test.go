@@ -56,3 +56,38 @@ func TestRenderJSON_StableSchema(t *testing.T) {
 		t.Fatalf("expected healthy=false")
 	}
 }
+
+func TestRenderJSON_HealthyPodHasEmptyFindingsArray(t *testing.T) {
+	pod := &corev1.Pod{
+		ObjectMeta: metav1.ObjectMeta{Namespace: "default", Name: "ok", UID: "uid-2"},
+		Status: corev1.PodStatus{
+			Phase: corev1.PodRunning,
+			Conditions: []corev1.PodCondition{
+				{Type: corev1.PodReady, Status: corev1.ConditionTrue},
+			},
+			ContainerStatuses: []corev1.ContainerStatus{{
+				Name:  "web",
+				Ready: true,
+				State: corev1.ContainerState{Running: &corev1.ContainerStateRunning{}},
+			}},
+		},
+	}
+	snap := &doctor.Snapshot{Pod: pod, FetchedAt: time.Date(2026, 6, 7, 10, 0, 0, 0, time.UTC)}
+
+	// Pass an empty (non-nil) findings slice — what doctor.Run will do via
+	// ensureSlice — and verify it serialises as [] not null.
+	rep := BuildReport(snap, nil, []doctor.Finding{}, true, "0.0.0",
+		time.Date(2026, 6, 7, 10, 0, 0, 0, time.UTC))
+
+	var buf bytes.Buffer
+	if err := RenderJSON(&buf, rep); err != nil {
+		t.Fatal(err)
+	}
+	out := buf.String()
+	if !bytes.Contains(buf.Bytes(), []byte(`"findings": []`)) {
+		t.Fatalf("expected `\"findings\": []` in JSON; got:\n%s", out)
+	}
+	if bytes.Contains(buf.Bytes(), []byte(`"findings": null`)) {
+		t.Fatalf("findings serialised as null:\n%s", out)
+	}
+}

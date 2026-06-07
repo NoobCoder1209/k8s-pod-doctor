@@ -79,6 +79,7 @@ type SnapshotSummary struct {
 	ContainerStatuses []ContainerBrief  `json:"containerStatuses,omitempty"`
 	InitStatuses      []ContainerBrief  `json:"initContainerStatuses,omitempty"`
 	EventCount        int               `json:"eventCount"`
+	LogErrors         map[string]string `json:"logErrors,omitempty"`
 }
 
 // Report is the top-level JSON output. SchemaVersion bumps only on breaking change.

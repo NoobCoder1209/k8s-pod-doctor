@@ -8,10 +8,11 @@ import (
 
 // oomKilledRule fires when a container was OOMKilled either currently or last
 // run. Wins over CrashLoopBackOff for the same container at verdict time.
+// Iterates regular containers AND native sidecar init containers.
 func oomKilledRule(s *Snapshot) []Finding {
 	p := s.Pod
 	var out []Finding
-	for _, cs := range p.Status.ContainerStatuses {
+	for _, cs := range allRunnableContainerStatuses(p) {
 		f := oomFinding(p, cs)
 		if f != nil {
 			out = append(out, *f)

@@ -2,7 +2,6 @@ package doctor
 
 import (
 	"fmt"
-	"strings"
 
 	corev1 "k8s.io/api/core/v1"
 )
@@ -40,15 +39,6 @@ func pendingSchedulingRule(s *Snapshot) []Finding {
 			"event " + briefEvent(firstEventByReason(s, "FailedScheduling")),
 		},
 	}}
-}
-
-func oneline(s string) string {
-	s = strings.ReplaceAll(s, "\n", " ")
-	s = strings.TrimSpace(s)
-	if s == "" {
-		return "no message"
-	}
-	return s
 }
 
 func briefEvent(e *corev1.Event) string {

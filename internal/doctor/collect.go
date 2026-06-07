@@ -2,9 +2,11 @@ package doctor
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"io"
 	"sort"
+	"strings"
 	"time"
 
 	corev1 "k8s.io/api/core/v1"
@@ -62,13 +64,17 @@ func eventTime(e corev1.Event) time.Time {
 
 // TailLogs returns the last `tail` lines of the named container.
 // Returns ErrContainerNotReady if the apiserver says the container is still
-// ContainerCreating / PodInitializing.
+// ContainerCreating / PodInitializing. A 30s sub-deadline keeps a slow
+// apiserver from hanging the diagnosis.
 func TailLogs(ctx context.Context, c kubernetes.Interface, ns, pod, container string, tail int64) ([]byte, error) {
+	logCtx, cancel := context.WithTimeout(ctx, 30*time.Second)
+	defer cancel()
+
 	req := c.CoreV1().Pods(ns).GetLogs(pod, &corev1.PodLogOptions{
 		Container: container,
 		TailLines: ptr.To(tail),
 	})
-	stream, err := req.Stream(ctx)
+	stream, err := req.Stream(logCtx)
 	if err != nil {
 		if apierrors.IsBadRequest(err) {
 			return nil, fmt.Errorf("%w: %s/%s container %s: %v", ErrContainerNotReady, ns, pod, container, err)
@@ -111,12 +117,38 @@ func CollectSnapshot(ctx context.Context, c kubernetes.Interface, ns, name strin
 	for _, c2 := range allContainerNames(pod) {
 		body, lerr := TailLogs(ctx, c, ns, name, c2, tail)
 		if lerr != nil {
-			snap.LogErrors[c2] = lerr.Error()
+			snap.LogErrors[c2] = friendlyLogError(lerr)
 			continue
 		}
 		snap.Logs[c2] = string(body)
 	}
 	return snap, nil
+}
+
+// friendlyLogError converts wrapped collect errors to short, user-readable
+// strings suitable for the "no logs: <reason>" rendering.
+func friendlyLogError(err error) string {
+	switch {
+	case errors.Is(err, ErrContainerNotReady):
+		return "container not yet started"
+	default:
+		return oneline(err.Error())
+	}
+}
+
+func oneline(s string) string {
+	s = strings.ReplaceAll(s, "\n", " ")
+	s = strings.ReplaceAll(s, "\r", " ")
+	s = strings.ReplaceAll(s, "\t", " ")
+	// Collapse runs of spaces.
+	for strings.Contains(s, "  ") {
+		s = strings.ReplaceAll(s, "  ", " ")
+	}
+	s = strings.TrimSpace(s)
+	if s == "" {
+		return "no message"
+	}
+	return s
 }
 
 func allContainerNames(p *corev1.Pod) []string {

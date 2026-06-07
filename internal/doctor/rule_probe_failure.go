@@ -10,12 +10,21 @@ import (
 // probeFailureRule fires on Unhealthy / ProbeWarning events, OR readiness=False
 // while the container is running. It promotes itself over CrashLoopBackOff for
 // the same container when liveness-induced kills are detected.
+//
+// Detection is event-driven: we require an Unhealthy/ProbeWarning Event in
+// the snapshot. Once kube-apiserver event TTL (~1h) elapses, a liveness
+// failure may show only as exitCode 137 + restartCount climbing — in that
+// regime crashLoopBackOffRule wins, which is acceptable: the user still gets
+// a critical finding pointing at the right container, just without "probe"
+// language. A future event-less liveness fallback could read
+// `lastState.terminated.exitCode == 137 && reason != "OOMKilled"` directly.
+//
+// Iterates regular containers AND native sidecar init containers.
 func probeFailureRule(s *Snapshot) []Finding {
 	p := s.Pod
 	var out []Finding
 
-	// 1) Container-scoped Unhealthy events.
-	for _, cs := range p.Status.ContainerStatuses {
+	for _, cs := range allRunnableContainerStatuses(p) {
 		evs := eventsForContainer(s, cs.Name)
 		var firstUnhealthy *corev1.Event
 		count := 0

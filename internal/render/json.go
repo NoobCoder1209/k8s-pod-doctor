@@ -65,6 +65,7 @@ func summarise(snap *doctor.Snapshot) doctor.SnapshotSummary {
 		ContainerStatuses: briefStatuses(pod.Status.ContainerStatuses),
 		InitStatuses:      briefStatuses(pod.Status.InitContainerStatuses),
 		EventCount:        len(snap.Events),
+		LogErrors:         snap.LogErrors,
 	}
 }
 

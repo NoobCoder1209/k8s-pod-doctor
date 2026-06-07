@@ -17,6 +17,11 @@ func initContainerFailureRule(s *Snapshot) []Finding {
 	}
 
 	for _, cs := range p.Status.InitContainerStatuses {
+		// Native sidecars (restartPolicy: Always) don't block init; the
+		// crashLoop / OOM / probe rules handle their failures directly.
+		if isSidecarInit(p, cs.Name) {
+			continue
+		}
 		if !isInitContainerFailing(cs) {
 			continue
 		}

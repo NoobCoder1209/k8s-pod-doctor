@@ -15,6 +15,9 @@ var imagePullReasons = map[string]bool{
 }
 
 // imagePullBackOffRule fires when a container cannot pull its image.
+// Iterates regular containers AND native sidecar init containers. Non-sidecar
+// init container pull failures are surfaced by initContainerFailureRule, so
+// don't double-report them here.
 func imagePullBackOffRule(s *Snapshot) []Finding {
 	p := s.Pod
 	var out []Finding
@@ -25,9 +28,15 @@ func imagePullBackOffRule(s *Snapshot) []Finding {
 			out = append(out, *f)
 		}
 	}
-	// Init containers handled by initContainerFailureRule (which delegates),
-	// but if the pod is otherwise scheduled fine and only init has the issue,
-	// the init rule already wins. Don't double-report.
+	for _, cs := range p.Status.InitContainerStatuses {
+		if !isSidecarInit(p, cs.Name) {
+			continue
+		}
+		f := pullFailureForContainer(p, cs, true)
+		if f != nil {
+			out = append(out, *f)
+		}
+	}
 	return out
 }
 

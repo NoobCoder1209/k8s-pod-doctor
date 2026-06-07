@@ -9,11 +9,12 @@ import (
 // crashLoopBackOffRule is the fallback for containers stuck in
 // CrashLoopBackOff that aren't already explained by OOM or probe failures.
 // resolveVerdict() drops this for a container if a higher-priority finding
-// already named it.
+// already named it. Iterates regular containers AND native sidecar init
+// containers.
 func crashLoopBackOffRule(s *Snapshot) []Finding {
 	p := s.Pod
 	var out []Finding
-	for _, cs := range p.Status.ContainerStatuses {
+	for _, cs := range allRunnableContainerStatuses(p) {
 		if cs.State.Waiting == nil || cs.State.Waiting.Reason != "CrashLoopBackOff" {
 			continue
 		}
@@ -43,7 +44,7 @@ func crashLoopFinding(p *corev1.Pod, cs corev1.ContainerStatus) *Finding {
 			fmt.Sprintf("Check command/args/env for container %s in the pod spec", cs.Name),
 		},
 		Evidence: []string{
-			fmt.Sprintf("state.waiting.reason=CrashLoopBackOff"),
+			"state.waiting.reason=CrashLoopBackOff",
 			fmt.Sprintf("lastState.terminated.exitCode=%d reason=%s", exitCode, reason),
 			fmt.Sprintf("lastState.terminated.message=%s", oneline(message)),
 			fmt.Sprintf("restartCount=%d", cs.RestartCount),
