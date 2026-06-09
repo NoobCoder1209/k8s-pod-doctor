@@ -64,7 +64,7 @@ func pendingVolumeRule(s *Snapshot) []Finding {
 	suggestions = append(suggestions,
 		"Check StorageClass / Secret / ConfigMap referenced by the pod's volumes")
 
-	message := "A volume required by this pod is not ready"
+	var message string
 	switch {
 	case claimName != "":
 		message = fmt.Sprintf("Volume %q (PVC %q) is not ready: %s", volName, claimName, reason)
