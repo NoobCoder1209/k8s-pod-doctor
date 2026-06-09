@@ -319,6 +319,71 @@ func TestCrashLoopBackOff_TerminatedStateOneRestart_DoesNotFire(t *testing.T) {
 	}
 }
 
+// TestCrashLoopBackOff_RunningWithLastTerminationOnly is the realistic
+// mid-loop shape: container has restarted and is currently Running again,
+// but LastTerminationState carries the prior error. State.Terminated is nil.
+// This is what motivated the State.Terminated|LastTerminationState branch.
+func TestCrashLoopBackOff_RunningWithLastTerminationOnly(t *testing.T) {
+	cs := corev1.ContainerStatus{
+		Name:         "app",
+		RestartCount: 4,
+		State:        corev1.ContainerState{Running: &corev1.ContainerStateRunning{}},
+		LastTerminationState: corev1.ContainerState{Terminated: &corev1.ContainerStateTerminated{
+			ExitCode: 1,
+			Reason:   "Error",
+		}},
+	}
+	snap := mkSnap(mkPod("default", "web", withPhase(corev1.PodRunning), withContainerStatus(cs)))
+	got := crashLoopBackOffRule(snap)
+	if len(got) != 1 || got[0].Code != "CrashLoopBackOff" {
+		t.Fatalf("want CrashLoopBackOff for Running container with prior failures, got %+v", got)
+	}
+}
+
+// TestCrashLoopBackOff_HighRestartButCleanExit_DoesNotFire pins the
+// ExitCode != 0 guard. A container with restartCount=5 but
+// LastTerminationState.ExitCode=0 has restarted cleanly each time and is
+// not crash-looping.
+func TestCrashLoopBackOff_HighRestartButCleanExit_DoesNotFire(t *testing.T) {
+	cs := corev1.ContainerStatus{
+		Name:         "app",
+		RestartCount: 5,
+		State:        corev1.ContainerState{Running: &corev1.ContainerStateRunning{}},
+		LastTerminationState: corev1.ContainerState{Terminated: &corev1.ContainerStateTerminated{
+			ExitCode: 0,
+			Reason:   "Completed",
+		}},
+	}
+	snap := mkSnap(mkPod("default", "web", withPhase(corev1.PodRunning), withContainerStatus(cs)))
+	if got := crashLoopBackOffRule(snap); len(got) != 0 {
+		t.Fatalf("clean exit must not fire crash-loop, got %+v", got)
+	}
+}
+
+// TestCrashLoopBackOff_JobOwnedPodIsSkipped: a Job pod with restartPolicy:
+// OnFailure that has retried twice is the expected shape, not a failure.
+func TestCrashLoopBackOff_JobOwnedPodIsSkipped(t *testing.T) {
+	cs := corev1.ContainerStatus{
+		Name:         "worker",
+		RestartCount: 3,
+		State: corev1.ContainerState{Terminated: &corev1.ContainerStateTerminated{
+			ExitCode: 1, Reason: "Error",
+		}},
+		LastTerminationState: corev1.ContainerState{Terminated: &corev1.ContainerStateTerminated{
+			ExitCode: 1, Reason: "Error",
+		}},
+	}
+	pod := mkPod("default", "ingest-12345", withPhase(corev1.PodRunning), withContainerStatus(cs))
+	pod.OwnerReferences = []metav1.OwnerReference{{
+		APIVersion: "batch/v1",
+		Kind:       "Job",
+		Name:       "ingest",
+	}}
+	if got := crashLoopBackOffRule(mkSnap(pod)); len(got) != 0 {
+		t.Fatalf("Job-owned pod must not flip to CrashLoopBackOff, got %+v", got)
+	}
+}
+
 func TestProbeFailure_Negative(t *testing.T) {
 	cs := corev1.ContainerStatus{
 		Name:  "web",

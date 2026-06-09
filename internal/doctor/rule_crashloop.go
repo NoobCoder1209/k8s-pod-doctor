@@ -15,10 +15,17 @@ import (
 // Detection: a container is "crash-looping" when EITHER
 //   - State.Waiting.Reason == "CrashLoopBackOff" (kubelet has flipped to
 //     backoff between restarts), OR
-//   - restartCount >= 2 AND lastState.terminated.exitCode != 0 (kubelet has
-//     restarted the container repeatedly because it keeps exiting non-zero;
-//     between restarts the state oscillates through Terminated{Error},
+//   - restartCount >= 2 AND either State.Terminated.ExitCode != 0 or
+//     LastTerminationState.Terminated.ExitCode != 0 (kubelet has restarted
+//     the container repeatedly because it keeps exiting non-zero; between
+//     restarts the state oscillates through Terminated{Error},
 //     Waiting{CrashLoopBackOff}, Running, and back).
+//
+// Job-owned pods (OwnerReference.Kind == "Job") are skipped: a failing
+// Job is the *expected* shape for "I run, I might fail, I get retried"
+// and the Job controller surfaces failures separately. Without this opt-out
+// any retried Job pod with restartPolicy: OnFailure would flip to
+// CrashLoopBackOff after 2 retries.
 //
 // The OOM and Probe rules win over this for the same container via verdict
 // suppression, so even when an OOMKilled container is technically also
@@ -26,6 +33,9 @@ import (
 // is dropped.
 func crashLoopBackOffRule(s *Snapshot) []Finding {
 	p := s.Pod
+	if isJobPod(p) {
+		return nil
+	}
 	var out []Finding
 	for _, cs := range allRunnableContainerStatuses(p) {
 		if !isCrashLooping(cs) {
@@ -34,6 +44,18 @@ func crashLoopBackOffRule(s *Snapshot) []Finding {
 		out = append(out, *crashLoopFinding(p, cs))
 	}
 	return out
+}
+
+// isJobPod reports whether the pod is owned by a batch/v1 Job. Job pods
+// have their own retry semantics (BackoffLimit) and shouldn't be classified
+// as CrashLoopBackOff just because OnFailure restarted them.
+func isJobPod(p *corev1.Pod) bool {
+	for _, ref := range p.OwnerReferences {
+		if ref.Kind == "Job" {
+			return true
+		}
+	}
+	return false
 }
 
 // isCrashLooping reports whether the container is stuck in a restart loop.

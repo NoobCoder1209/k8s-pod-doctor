@@ -1,10 +1,18 @@
 # Guide
 
-> **Last verified:** 2026-06-09 against commit `9dbd19e` (branch `feature/guide-and-demo-verification`). Ran the full demo flow on macOS Apple Silicon: brought up a `kind` cluster, applied the three deliberately-broken pods, ran `pod-doctor` against each. Got the expected verdicts — `ImagePullBackOff` on `broken-image`, `OOMKilled` on `broken-oom`, `CrashLoopBackOff` on `broken-crash`. The `--all-failing -o json | jq '.verdict.code'` pipeline returned the same three codes. GIF re-recorded with the corrected output and committed to `docs/screenshots/demo.gif`.
+> **Last verified:** 2026-06-09 against commit `9dbd19e` (branch `feature/guide-and-demo-verification`). Ran the full demo flow on macOS Apple Silicon. The JSON pipeline in section 1 step 6 returned exactly:
+>
+> ```
+> default/broken-crash: CrashLoopBackOff
+> default/broken-image: ImagePullBackOff
+> default/broken-oom: OOMKilled
+> ```
+>
+> GIF re-recorded against the post-fix binary (530K, replaces the prior 692K recording from before the crash-loop fix). A frame extracted at t≈18s shows the CRITICAL OOMKilled banner with full Status / Events / Logs / Findings sections.
 
 This guide is for someone who has never touched the repo. It explains every command in order, what every meaningful file does, what env vars and secrets are needed, and what a working demo looks like.
 
-If you only want to *use* the binary, read the [README](README.md) — it has install instructions and quick-start examples. This guide is for *running the demo locally* and *understanding the codebase*.
+If you only want to install and run the binary, the [README](README.md) covers that. This guide is for *running the demo locally* and *understanding the codebase*.
 
 ---
 
@@ -12,14 +20,21 @@ If you only want to *use* the binary, read the [README](README.md) — it has in
 
 ### Prerequisites
 
+Required to run the demo:
+
 | Tool | Why | How to install (macOS) |
 |---|---|---|
 | Go 1.23+ | Build the binary | `brew install go` |
-| Docker (running) | `kind` provisions K8s nodes as Docker containers | [Docker Desktop](https://docs.docker.com/desktop/) — make sure the daemon is actually running before you start |
+| Docker (running) | `kind` provisions K8s nodes as Docker containers | [Docker Desktop](https://docs.docker.com/desktop/) — make sure the daemon is running before you start |
 | `kind` | Spins up a local Kubernetes cluster | `brew install kind` |
 | `kubectl` | Talks to the cluster | `brew install kubectl` |
-| `vhs` | Records the demo GIF declaratively | `brew install vhs` |
-| `jq` | Parses the JSON pipeline example | `brew install jq` |
+
+Optional (only if you want to re-record the GIF or use the JSON pipeline example):
+
+| Tool | Why |
+|---|---|
+| `vhs` | Records the demo GIF declaratively (`brew install vhs`) |
+| `jq` | Parses JSON in the `--all-failing -o json` example (`brew install jq`) |
 
 You don't need a cloud account, a real cluster, or any credentials. Everything runs locally.
 
@@ -216,11 +231,13 @@ Same as above, but you also passed `--kubeconfig=...` and the path is wrong. Ver
 
 ### The verdict says `HEALTHY` but `kubectl get pods` shows `Error` or `CrashLoopBackOff`
 
-Earlier than commit `9dbd19e` the crash-loop rule was too narrow — it only matched pods sitting in `State.Waiting.Reason == "CrashLoopBackOff"`, missing the brief windows when kubelet has the container in `State.Terminated`. Pull `main` and rebuild:
+If you're on a checkout from before commit `9dbd19e`, the crash-loop rule was too narrow — it only matched pods sitting in `State.Waiting.Reason == "CrashLoopBackOff"` and missed the brief windows when kubelet has the container in `State.Terminated`. That bug is fixed on `main`. Pull and rebuild:
 
 ```bash
 git pull && make build
 ```
+
+If you see this on a checkout that already includes `9dbd19e` or later, please open an issue — there's a new edge case in the rule.
 
 ### `pod-doctor default broken-image` works but the banner has no colour
 
@@ -244,7 +261,7 @@ kind load docker-image polinux/stress --name pod-doctor-demo
 
 ### `kind create cluster` hangs or times out
 
-Bump the `--wait` value in `scripts/stage-demo.sh` (currently 60s) or check Docker resource limits in Docker Desktop → Settings → Resources. The control plane needs ~1Gi RAM minimum.
+`--wait 60s` in `scripts/stage-demo.sh` is a *timeout*, not a delay — it tells kind how long to wait for the control plane to report Ready before giving up. If the control plane is genuinely slow, bumping it (e.g. to `--wait 180s`) gives a slow daemon more grace. But if it hangs forever, the underlying cause is usually Docker resource exhaustion: open Docker Desktop → Settings → Resources and confirm at least 2 CPU and 2Gi RAM are allocated. The control plane needs ~1Gi RAM minimum.
 
 ### Tests fail with `cannot find package "k8s.io/client-go/..."`
 
@@ -256,8 +273,11 @@ Either the `HOMEBREW_TAP_GITHUB_TOKEN` secret isn't set, or the PAT has expired,
 
 ---
 
-## 6. Questions about the screenshot/GIF
+## Screenshot / GIF
 
-The README **does** include a demo GIF — `docs/screenshots/demo.gif`, embedded at the top of [README.md](README.md). It runs `pod-doctor` against the three broken-pod scenarios on a real kind cluster and shows the boxed verdict banner for each. Re-recorded on 2026-06-09 against commit `9dbd19e`.
+The README embeds `docs/screenshots/demo.gif` at the top — recorded against a real `kind` cluster running the three deliberately-broken pods. Re-recorded on 2026-06-09 to capture the corrected `CrashLoopBackOff` verdict (see commit `9dbd19e`).
 
-If you want to re-record it (e.g. after changing the renderer), the steps are in section 1. If you want to capture additional scenarios (PVC failures, scheduling failures, init container failures), edit `scripts/stage-demo.sh` to add the pod manifests and `scripts/demo.tape` to add the corresponding `pod-doctor` invocations.
+To re-record after changing the renderer or adding scenarios:
+1. Edit `scripts/stage-demo.sh` to add new pod manifests if needed.
+2. Edit `scripts/demo.tape` to add the corresponding `pod-doctor` invocations.
+3. Run `./scripts/stage-demo.sh && make build && vhs scripts/demo.tape`.
